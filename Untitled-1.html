@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ライフログ家計簿 - ダッシュボード</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans h-screen flex flex-col overflow-hidden">
+
+    <!-- ヘッダー -->
+    <header class="bg-white border-b border-slate-200 px-6 py-2.5 flex justify-between items-center shrink-0">
+        <div class="flex items-center gap-3">
+            <h1 class="text-lg font-bold text-indigo-600">ライフログ家計簿</h1>
+            <span class="text-xs text-slate-400 hidden sm:inline">勤務形態 × タスク × 家計・自炊アルバム</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <!-- 記録履歴を開くボタン -->
+            <button onclick="openHistoryModal()" class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition flex items-center gap-1.5">
+                📝 記録履歴を見る
+            </button>
+            <!-- 対象月切り替え -->
+            <div class="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded-lg p-0.5">
+                <button onclick="changeMonth(-1)" class="px-2 py-1 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded transition" title="前月">◀</button>
+                <input type="month" id="targetMonth" onchange="refreshAll()" class="px-1.5 py-0.5 text-sm bg-transparent outline-none font-medium text-slate-700">
+                <button onclick="changeMonth(1)" class="px-2 py-1 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded transition" title="次月">▶</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- メインダッシュボード -->
+    <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 overflow-y-auto lg:overflow-hidden">
+
+        <!-- ================= 左カラム：カレンダー ＋ 折れ線グラフ ================= -->
+        <div class="lg:col-span-7 flex flex-col gap-4 h-full overflow-hidden">
+            
+            <!-- 月間カレンダー -->
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col min-h-[300px]">
+                <div class="flex justify-between items-center mb-2">
+                    <div class="flex items-center gap-2">
+                        <h2 class="text-sm font-bold text-slate-700">📅 カレンダー記録 <span class="text-[11px] font-normal text-slate-400">（日付クリックで拡大・写真/メモ編集）</span></h2>
+                        <div class="flex items-center gap-1">
+                            <button onclick="changeMonth(-1)" class="px-1.5 py-0.5 text-[11px] bg-slate-100 hover:bg-slate-200 rounded text-slate-600">前月</button>
+                            <button onclick="goTodayMonth()" class="px-1.5 py-0.5 text-[11px] bg-indigo-50 hover:bg-indigo-100 rounded text-indigo-600 font-medium">今月</button>
+                            <button onclick="changeMonth(1)" class="px-1.5 py-0.5 text-[11px] bg-slate-100 hover:bg-slate-200 rounded text-slate-600">次月</button>
+                        </div>
+                    </div>
+                    <div class="flex gap-1.5 text-[11px]">
+                        <span class="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">出社</span>
+                        <span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">在宅</span>
+                        <span class="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">夜勤</span>
+                        <span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">休日</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-7 text-center text-xs font-semibold text-slate-500 border-b border-slate-100 pb-1 mb-1">
+                    <div class="text-rose-500">日</div>
+                    <div>月</div>
+                    <div>火</div>
+                    <div>水</div>
+                    <div>木</div>
+                    <div>金</div>
+                    <div class="text-blue-500">土</div>
+                </div>
+
+                <div id="calendarGrid" class="grid grid-cols-7 gap-1 flex-1 auto-rows-fr"></div>
+            </div>
+
+            <!-- 折れ線グラフ -->
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-[230px] shrink-0 flex flex-col">
+                <div class="flex justify-between items-center mb-1">
+                    <div class="flex items-center gap-2">
+                        <h2 class="text-sm font-bold text-slate-700">📈 日別支出の推移</h2>
+                        <span id="chartMonthLabel" class="text-xs text-slate-400"></span>
+                    </div>
+                    <!-- 拡大＆年間グラフボタン -->
+                    <button onclick="openChartModal()" class="px-2.5 py-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition flex items-center gap-1">
+                        🔍 拡大・年間推移を見る
+                    </button>
+                </div>
+                <div class="relative flex-1 w-full h-full">
+                    <canvas id="expenseChart"></canvas>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ================= 右カラム：クイック入力フォーム ＋ 支出集計 ================= -->
+        <div class="lg:col-span-5 flex flex-col gap-4 h-full overflow-y-auto pr-1">
+
+            <!-- クイック入力フォーム -->
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 shrink-0">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-sm font-bold text-slate-700">✏️ クイック記録</h2>
+                    <button onclick="toggleSettingPanel()" class="text-xs text-indigo-600 hover:underline font-medium">
+                        ⚙️ 交通費・タスク設定
+                    </button>
+                </div>
+
+                <!-- 設定パネル（交通費 ＋ タスク項目） -->
+                <div id="settingPanel" class="hidden mb-3 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">🚃 休日以外の自動加算交通費 (円)</label>
+                        <div class="flex gap-1.5 items-center">
+                            <input type="number" id="defaultTransitFee" placeholder="例: 500" class="w-32 px-2.5 py-1 text-xs border rounded focus:ring-1 focus:ring-indigo-500 outline-none bg-white">
+                            <button onclick="saveTransitFee()" class="bg-indigo-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-indigo-700">保存</button>
+                            <span class="text-[11px] text-slate-400">※「休日」以外に自動加算</span>
+                        </div>
+                    </div>
+                    <hr class="border-slate-200">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">✅ タスク項目の追加・削除</label>
+                        <div class="flex gap-1.5 mb-2">
+                            <input type="text" id="newTaskName" placeholder="新しいタスク名..." class="flex-1 px-2.5 py-1 text-xs border rounded focus:ring-1 focus:ring-indigo-500 outline-none bg-white">
+                            <button onclick="addTaskMaster()" class="bg-slate-800 text-white px-3 py-1 rounded text-xs font-medium hover:bg-slate-700">追加</button>
+                        </div>
+                        <div id="masterTaskList" class="flex flex-wrap gap-1.5"></div>
+                    </div>
+                </div>
+
+                <!-- 1行目：日付 と 勤務形態 -->
+                <div class="grid grid-cols-2 gap-3 mb-2.5">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">日付</label>
+                        <input type="date" id="recordDate" class="w-full p-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">勤務形態</label>
+                        <select id="workType" onchange="updateTransitNotice()" class="w-full p-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <option value="出社">出社</option>
+                            <option value="在宅">在宅</option>
+                            <option value="夜勤">夜勤</option>
+                            <option value="休日">休日</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 2行目：完了したタスク -->
+                <div class="mb-2.5">
+                    <label class="block text-xs font-medium text-slate-600 mb-1">完了したタスク</label>
+                    <div id="dailyTaskChecklist" class="grid grid-cols-2 sm:grid-cols-3 gap-1.5"></div>
+                </div>
+
+                <!-- 3行目：支出金額 と 収入金額 -->
+                <div class="grid grid-cols-2 gap-3 mb-2.5">
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="block text-xs font-medium text-slate-600">支出金額 (円)</label>
+                            <span id="transitNotice" class="text-[10px] text-indigo-600 font-medium"></span>
+                        </div>
+                        <input type="number" id="expenseAmount" placeholder="例: 1200" class="w-full p-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-emerald-700 mb-1">収入金額 (円・任意)</label>
+                        <input type="number" id="incomeAmount" placeholder="例: 250000" class="w-full p-1.5 text-sm border border-emerald-200 bg-emerald-50/30 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none">
+                    </div>
+                </div>
+
+                <!-- 4行目：一言メモ（自炊メニューなど） -->
+                <div class="mb-3">
+                    <input type="text" id="quickMemo" placeholder="🍳 メモ（例：カレー作った、お弁当持参など）※写真はカレンダーの日付から追加" class="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50">
+                </div>
+
+                <!-- 保存ボタン -->
+                <button onclick="saveRecord()" class="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition">
+                    記録する
+                </button>
+            </div>
+
+            <!-- 支出総額 ＆ クリック展開で平均・前月比 -->
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col justify-between">
+                <div>
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-sm font-bold text-slate-700">📊 勤務形態別の集計</h2>
+                        <button onclick="toggleAnalyticsDetail()" id="toggleDetailBtn" class="text-xs text-indigo-600 hover:underline font-medium">
+                            ▼ 平均・前月比を開く
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100 mb-3 text-center">
+                        <div>
+                            <div class="text-[10px] text-slate-500">今月の支出総額</div>
+                            <div id="monthlyTotalExpense" class="text-sm font-bold text-slate-800">¥0</div>
+                        </div>
+                        <div class="border-x border-slate-200">
+                            <div class="text-[10px] text-emerald-600">今月の収入総額</div>
+                            <div id="monthlyTotalIncome" class="text-sm font-bold text-emerald-600">+¥0</div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] text-slate-500">収支バランス</div>
+                            <div id="monthlyBalance" class="text-sm font-bold text-indigo-600">¥0</div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2.5 cursor-pointer" onclick="toggleAnalyticsDetail()" id="workTypeAnalytics"></div>
+                </div>
+
+                <p class="text-[11px] text-slate-400 text-center mt-3">
+                    ※ カードをクリックすると「1日あたり平均」と「前月比」が開きます
+                </p>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- ================= 1. 日付拡大・詳細編集＆写真アルバムモーダル ================= -->
+    <div id="dayDetailModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <!-- モーダルヘッダー -->
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <div class="flex items-center gap-2">
+                    <span class="text-xl">📅</span>
+                    <h3 class="text-lg font-bold text-slate-800" id="detailModalDateTitle">2026年11月19日 の記録詳細</h3>
+                </div>
+                <button onclick="closeDayDetailModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold px-2">×</button>
+            </div>
+
+            <!-- モーダル本文（左右2カラム：左に写真＆自炊メモ、右に数値＆タスク編集） -->
+            <div class="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                <!-- 左側：写真アルバム ＆ 自炊・日記メモ -->
+                <div class="flex flex-col gap-3">
+                    <label class="block text-xs font-bold text-slate-700">📸 今日の写真（自炊・レシート・思い出）</label>
+                    
+                    <!-- 写真プレビュー枠 -->
+                    <div class="relative w-full h-48 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center overflow-hidden group">
+                        <img id="detailPhotoPreview" src="" alt="記録写真" class="hidden w-full h-full object-cover">
+                        <div id="detailPhotoPlaceholder" class="text-center p-4">
+                            <span class="text-2xl block mb-1">🍳</span>
+                            <span class="text-xs text-slate-400">写真を追加して記録を残そう</span>
+                        </div>
+                        <!-- 写真削除ボタン -->
+                        <button id="removePhotoBtn" onclick="removeDetailPhoto()" class="hidden absolute top-2 right-2 bg-slate-900/70 text-white text-xs px-2.5 py-1 rounded-lg hover:bg-rose-600 transition">
+                            写真を削除
+                        </button>
+                    </div>
+
+                    <!-- ファイル選択ボタン -->
+                    <label class="cursor-pointer bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold py-2 px-3 rounded-lg text-center border border-indigo-200 transition">
+                        📁 写真を選択・変更する
+                        <input type="file" id="detailPhotoInput" accept="image/*" onchange="handlePhotoUpload(event)" class="hidden">
+                    </label>
+
+                    <!-- 自炊メニュー・日記メモ -->
+                    <div class="mt-1">
+                        <label class="block text-xs font-bold text-slate-700 mb-1">📝 自炊メニュー・1日のメモ</label>
+                        <textarea id="detailMemo" rows="3" placeholder="例：【自炊】鶏の照り焼き、ほうれん草のおひたし、味噌汁。材料費も安く済んだ！" class="w-full p-2.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"></textarea>
+                    </div>
+                </div>
+
+                <!-- 右側：勤務形態・タスク・金額編集 -->
+                <div class="flex flex-col gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">💼 勤務形態</label>
+                        <select id="detailWorkType" class="w-full p-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <option value="出社">出社</option>
+                            <option value="在宅">在宅</option>
+                            <option value="夜勤">夜勤</option>
+                            <option value="休日">休日</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">✅ 完了したタスク</label>
+                        <div id="detailTaskChecklist" class="grid grid-cols-2 gap-1.5 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-lg border border-slate-200"></div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">💸 支出合計 (円)</label>
+                            <input type="number" id="detailExpense" placeholder="0" class="w-full p-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold">
+                            <span id="detailTransitNote" class="text-[10px] text-slate-400 block mt-0.5"></span>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-emerald-700 mb-1">💰 収入金額 (円)</label>
+                            <input type="number" id="detailIncome" placeholder="0" class="w-full p-2 text-sm border border-emerald-200 bg-emerald-50/30 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-emerald-700">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- モーダルフッター -->
+            <div class="px-6 py-3 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
+                <button id="detailDeleteBtn" onclick="deleteFromDetailModal()" class="text-xs text-rose-500 hover:underline font-semibold">
+                    🗑️ この日の記録を削除
+                </button>
+                <div class="flex gap-2">
+                    <button onclick="closeDayDetailModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-100">キャンセル</button>
+                    <button onclick="saveFromDetailModal()" class="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-xs">この内容で保存する</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 2. グラフ拡大 ＆ 年間推移モーダル ================= -->
+    <div id="chartModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden">
+            <!-- ヘッダー -->
+            <div class="px-6 py-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3 bg-slate-50">
+                <div class="flex items-center gap-3">
+                    <h3 class="text-base font-bold text-slate-800">📈 支出・収支グラフ分析</h3>
+                    <!-- 切り替えタブ（日別 vs 年間） -->
+                    <div class="flex bg-slate-200/80 p-0.5 rounded-lg text-xs font-semibold">
+                        <button id="tabDailyChart" onclick="switchChartMode('daily')" class="px-3 py-1 rounded-md bg-white text-indigo-600 shadow-2xs transition">日別推移（月間）</button>
+                        <button id="tabYearlyChart" onclick="switchChartMode('yearly')" class="px-3 py-1 rounded-md text-slate-600 hover:text-slate-800 transition">1年通しての推移（月別）</button>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <!-- 年選択（年間モード時に表示） -->
+                    <div id="yearlyYearSelector" class="hidden flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1">
+                        <button onclick="changeChartYear(-1)" class="text-xs font-bold text-slate-600 hover:text-indigo-600 px-1">◀</button>
+                        <span id="chartYearDisplay" class="text-xs font-bold text-slate-700 px-1">2026年</span>
+                        <button onclick="changeChartYear(1)" class="text-xs font-bold text-slate-600 hover:text-indigo-600 px-1">▶</button>
+                    </div>
+                    <button onclick="closeChartModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold px-2">×</button>
+                </div>
+            </div>
+
+            <!-- 年間サマリーバー（年間モード時に表示） -->
+            <div id="yearlySummaryBar" class="hidden grid grid-cols-3 gap-4 px-6 py-3 bg-indigo-50/60 border-b border-indigo-100 text-center">
+                <div>
+                    <span class="text-[11px] text-slate-500 block">年間支出合計</span>
+                    <span id="yearlyTotalExpense" class="text-base font-bold text-slate-800">¥0</span>
+                </div>
+                <div class="border-x border-indigo-200/60">
+                    <span class="text-[11px] text-emerald-700 block">年間収入合計</span>
+                    <span id="yearlyTotalIncome" class="text-base font-bold text-emerald-600">+¥0</span>
+                </div>
+                <div>
+                    <span class="text-[11px] text-indigo-700 block">年間収支トータル</span>
+                    <span id="yearlyTotalBalance" class="text-base font-bold text-indigo-700">¥0</span>
+                </div>
+            </div>
+
+            <!-- 拡大グラフ描画エリア -->
+            <div class="p-6 flex-1 relative w-full h-full">
+                <canvas id="expandedChartCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 3. 記録履歴モーダル ================= -->
+    <div id="historyModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div class="p-4 border-b border-slate-100 flex justify-between items-center">
+                <h3 class="text-base font-bold text-slate-800" id="historyModalTitle">📝 記録履歴</h3>
+                <button onclick="closeHistoryModal()" class="text-slate-400 hover:text-slate-600 text-lg font-bold px-2">×</button>
+            </div>
+            <div id="modalRecordList" class="p-4 overflow-y-auto space-y-2 text-xs text-slate-600 flex-1"></div>
+            <div class="p-3 border-t border-slate-100 text-right bg-slate-50 rounded-b-2xl">
+                <button onclick="closeHistoryModal()" class="px-4 py-1.5 bg-slate-800 text-white text-xs font-semibold rounded-lg hover:bg-slate-700">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const workTypes = ['出社', '在宅', '夜勤', '休日'];
+        const workTypeBadgeColors = {
+            '出社': 'bg-blue-100 text-blue-700',
+            '在宅': 'bg-emerald-100 text-emerald-700',
+            '夜勤': 'bg-purple-100 text-purple-700',
+            '休日': 'bg-amber-100 text-amber-700'
+        };
+        const defaultTasks = ['自炊', '洗濯', '運動', '買い物'];
+        
+        let chartInstance = null;
+        let expandedChartInstance = null;
+        let isAnalyticsExpanded = false;
+        
+        // 詳細モーダル用の状態変数
+        let currentEditingDate = '';
+        let currentEditingPhotoBase64 = '';
+        
+        // 拡大グラフ用の状態変数
+        let currentChartMode = 'daily'; // 'daily' or 'yearly'
+        let currentChartYear = new Date().getFullYear();
+
+        function getTodayLocalStr() {
+            const now = new Date();
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        const todayStr = getTodayLocalStr();
+        document.getElementById('recordDate').value = todayStr;
+        document.getElementById('targetMonth').value = todayStr.slice(0, 7);
+
+        window.onload = function() {
+            document.getElementById('recordDate').value = getTodayLocalStr();
+            initTaskMaster();
+            initTransitFee();
+            renderTasks();
+            updateTransitNotice();
+            refreshAll();
+        };
+
+        function refreshAll() {
+            const targetMonth = document.getElementById('targetMonth').value;
+            document.getElementById('chartMonthLabel').textContent = `${targetMonth.replace('-', '年')}月`;
+            renderCalendar();
+            renderChart();
+            renderAnalytics();
+        }
+
+        // --- 月の移動 ---
+        function changeMonth(offset) {
+            const targetInput = document.getElementById('targetMonth');
+            const [year, month] = targetInput.value.split('-').map(Number);
+            const newDate = new Date(year, month - 1 + offset, 1);
+            targetInput.value = `${newDate.getFullYear()}-${String(newDate.getMonth() + 1).padStart(2, '0')}`;
+            refreshAll();
+        }
+
+        function goTodayMonth() {
+            document.getElementById('targetMonth').value = getTodayLocalStr().slice(0, 7);
+            refreshAll();
+        }
+
+        // --- 設定パネル（交通費 ＋ タスク） ---
+        function toggleSettingPanel() {
+            document.getElementById('settingPanel').classList.toggle('hidden');
+        }
+
+        function initTransitFee() {
+            document.getElementById('defaultTransitFee').value = localStorage.getItem('lifelog_transit_fee') || '0';
+        }
+
+        function saveTransitFee() {
+            const fee = Number(document.getElementById('defaultTransitFee').value) || 0;
+            localStorage.setItem('lifelog_transit_fee', String(fee));
+            updateTransitNotice();
+            alert(`休日以外の自動加算交通費を ¥${fee.toLocaleString()} に設定しました！`);
+        }
+
+        function updateTransitNotice() {
+            const workType = document.getElementById('workType').value;
+            const fee = Number(localStorage.getItem('lifelog_transit_fee')) || 0;
+            const noticeEl = document.getElementById('transitNotice');
+            noticeEl.textContent = (workType !== '休日' && fee > 0) ? `+交通費 ¥${fee.toLocaleString()} 自動加算` : '';
+        }
+
+        function initTaskMaster() {
+            if (!localStorage.getItem('lifelog_tasks')) {
+                localStorage.setItem('lifelog_tasks', JSON.stringify(defaultTasks));
+            }
+        }
+
+        function renderTasks() {
+            const tasks = JSON.parse(localStorage.getItem('lifelog_tasks')) || [];
+            const checklistEl = document.getElementById('dailyTaskChecklist');
+            const masterListEl = document.getElementById('masterTaskList');
+
+            checklistEl.innerHTML = '';
+            masterListEl.innerHTML = '';
+
+            if (tasks.length === 0) {
+                checklistEl.innerHTML = '<p class="text-[11px] text-slate-400 col-span-full">タスクがありません。「⚙️ 交通費・タスク設定」から追加できます</p>';
+                masterListEl.innerHTML = '<span class="text-xs text-slate-400">登録タスクなし</span>';
+                return;
+            }
+
+            tasks.forEach((task, index) => {
+                const label = document.createElement('label');
+                label.className = 'flex items-center space-x-1.5 px-2 py-1 border border-slate-200 rounded cursor-pointer hover:bg-indigo-50 transition select-none';
+                label.innerHTML = `
+                    <input type="checkbox" value="${task}" class="task-checkbox w-3.5 h-3.5 text-indigo-600 rounded">
+                    <span class="text-xs text-slate-700 truncate">${task}</span>
+                `;
+                checklistEl.appendChild(label);
+
+                const tag = document.createElement('span');
+                tag.className = 'inline-flex items-center gap-1 bg-white border border-slate-200 text-slate-700 text-[11px] px-2 py-0.5 rounded-full';
+                tag.innerHTML = `
+                    ${task}
+                    <button onclick="removeTaskMaster(${index})" class="text-slate-400 hover:text-rose-500 font-bold px-1">×</button>
+                `;
+                masterListEl.appendChild(tag);
+            });
+        }
+
+        function addTaskMaster() {
+            const input = document.getElementById('newTaskName');
+            const taskName = input.value.trim();
+            if (!taskName) return;
+
+            let tasks = JSON.parse(localStorage.getItem('lifelog_tasks')) || [];
+            if (tasks.includes(taskName)) {
+                alert('すでに登録されています');
+                return;
+            }
+            tasks.push(taskName);
+            localStorage.setItem('lifelog_tasks', JSON.stringify(tasks));
+            input.value = '';
+            renderTasks();
+        }
+
+        function removeTaskMaster(index) {
+            let tasks = JSON.parse(localStorage.getItem('lifelog_tasks')) || [];
+            if (!confirm(`タスク「${tasks[index]}」を削除しますか？`)) return;
+            tasks.splice(index, 1);
+            localStorage.setItem('lifelog_tasks', JSON.stringify(tasks));
+            renderTasks();
+        }
+
+        // --- クイック保存 ---
+        function saveRecord() {
+            const date = document.getElementById('recordDate').value;
+            const workType = document.getElementById('workType').value;
+            const rawExpense = document.getElementById('expenseAmount').value;
+            const rawIncome = document.getElementById('incomeAmount').value;
+            const memo = document.getElementById('quickMemo').value.trim();
+
+            if (!date) {
+                alert('日付を選択してください');
+                return;
+            }
+            if (rawExpense === '' && rawIncome === '' && memo === '') {
+                alert('支出・収入・メモのいずれかを入力してください');
+                return;
+            }
+
+            const transitFee = Number(localStorage.getItem('lifelog_transit_fee')) || 0;
+            const appliedTransit = (workType !== '休日') ? transitFee : 0;
+            const totalExpense = (Number(rawExpense) || 0) + appliedTransit;
+            const income = Number(rawIncome) || 0;
+
+            const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
+            const completedTasks = Array.from(checkedBoxes).map(cb => cb.value);
+
+            let records = JSON.parse(localStorage.getItem('lifelog_records')) || [];
+            const existingIndex = records.findIndex(r => r.date === date);
+
+            // 既存データがある場合は写真やメモを引き継ぐ
+            const existingRecord = existingIndex !== -1 ? records[existingIndex] : null;
+
+            const newRecord = {
+                id: existingRecord ? existingRecord.id : Date.now(),
+                date: date,
+                workType: workType,
+                tasks: completedTasks,
+                expense: totalExpense,
+                transitIncluded: appliedTransit,
+                income: income,
+                memo: memo || (existingRecord ? existingRecord.memo : ''),
+                photo: existingRecord ? existingRecord.photo : ''
+            };
+
+            if (existingIndex !== -1) {
+                if (!confirm(`${date} の記録は既にあります。上書きしますか？`)) return;
+                records[existingIndex] = newRecord;
+            } else {
+                records.push(newRecord);
+            }
+
+            records.sort((a, b) => b.date.localeCompare(a.date));
+            localStorage.setItem('lifelog_records', JSON.stringify(records));
+
+            document.getElementById('expenseAmount').value = '';
+            document.getElementById('incomeAmount').value = '';
+            document.getElementById('quickMemo').value = '';
+            checkedBoxes.forEach(cb => cb.checked = false);
+
+            document.getElementById('targetMonth').value = date.slice(0, 7);
+            refreshAll();
+        }
+
+        function deleteRecord(id) {
+            if (!confirm('この記録を削除しますか？')) return;
+            let records = JSON.parse(localStorage.getItem('lifelog_records')) || [];
+            records = records.filter(r => r.id !== id);
+            localStorage.setItem('lifelog_records', JSON.stringify(records));
+            refreshAll();
+            renderModalRecords();
+        }
+
+        // --- 📅 カレンダー描画 ---
+        function renderCalendar() {
+            const targetMonth = document.getElementById('targetMonth').value;
+            if (!targetMonth) return;
+
+            const [year, month] = targetMonth.split('-').map(Number);
+            const firstDayOfWeek = new Date(year, month - 1, 1).getDay();
+            const daysInMonth = new Date(year, month, 0).getDate();
+
+            const allRecords = JSON.parse(localStorage.getItem('lifelog_records')) || [];
+            const monthRecordsMap = {};
+            allRecords.filter(r => r.date.startsWith(targetMonth)).forEach(r => {
+                monthRecordsMap[r.date] = r;
+            });
+
+            const grid = document.getElementById('calendarGrid');
+            grid.innerHTML = '';
+            const currentTodayStr = getTodayLocalStr();
+
+            for (let i = 0; i < firstDayOfWeek; i++) {
+                const emptyCell = document.createElement('div');
+                emptyCell.className = 'bg-slate-50/50 rounded-lg';
+                grid.appendChild(emptyCell);
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateStr = `${targetMonth}-${String(day).padStart(2, '0')}`;
+                const record = monthRecordsMap[dateStr];
+                const isToday = dateStr === currentTodayStr;
+
+                const cell = document.createElement('div');
+                // 日付クリックで「拡大・詳細編集モーダル」を開く
+                cell.onclick = () => openDayDetailModal(dateStr);
+
+                cell.className = `p-1.5 rounded-lg border cursor-pointer transition flex flex-col justify-between hover:border-indigo-400 hover:shadow-xs overflow-hidden ${
+                    isToday ? 'border-indigo-500 bg-indigo-50/40' : 'border-slate-100 bg-white'
+                }`;
+
+                let headerHtml = `<div class="flex justify-between items-center gap-0.5">
+                    <span class="text-xs font-semibold ${isToday ? 'text-indigo-600' : 'text-slate-600'}">${day}</span>
+                    <div class="flex items-center gap-0.5">`;
+
+                if (record && record.photo) {
+                    headerHtml += `<span class="text-[10px]" title="写真あり">📷</span>`;
+                }
+                if (record) {
+                    const badgeClass = workTypeBadgeColors[record.workType] || 'bg-slate-100 text-slate-700';
+                    headerHtml += `<span class="text-[9px] px-1 rounded ${badgeClass}">${record.workType}</span>`;
+                }
+                headerHtml += `</div></div>`;
+
+                let bodyHtml = '';
+                if (record) {
+                    const incomeHtml = (record.income && record.income > 0)
+                        ? `<div class="text-[9px] font-bold text-emerald-600 truncate">+¥${record.income.toLocaleString()}</div>`
+                        : '';
+                    const memoHtml = record.memo
+                        ? `<div class="text-[9px] text-slate-500 truncate" title="${record.memo}">🍳${record.memo}</div>`
+                        : '';
+
+                    bodyHtml = `
+                        <div class="mt-0.5 leading-tight">
+                            ${incomeHtml}
+                            <div class="text-[11px] font-bold text-slate-800 truncate">¥${record.expense.toLocaleString()}</div>
+                            ${memoHtml}
+                        </div>
+                    `;
+                }
+
+                cell.innerHTML = headerHtml + bodyHtml;
+                grid.appendChild(cell);
+            }
+        }
+
+        // --- 🔍 1. 日付拡大・詳細編集＆写真アルバムモーダル ---
+        function openDayDetailModal(dateStr) {
+            currentEditingDate = dateStr;
+            const [y, m, d] = dateStr.split('-');
+            document.getElementById('detailModalDateTitle').textContent = `${y}年${Number(m)}月${Number(d)}日 の記録詳細`;
+
+            const allRecords = JSON.parse(localStorage.getItem('lifelog_records')) || [];
+            const record = allRecords.find(r => r.date === dateStr);
+
+            // タスク一覧の生成
+            const tasks = JSON.parse(localStorage.getItem('lifelog_tasks')) || [];
+            const taskContainer = document.getElementById('detailTaskChecklist');
+            taskContainer.innerHTML = '';
+            tasks.forEach(task => {
+                const isChecked = record && record.tasks && record.tasks.includes(task);
+                const label = document.createElement('label');
+                label.className = 'flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer select-none';
+                label.innerHTML = `
+                    <input type="checkbox" value="${task}" ${isChecked ? 'checked' : ''} class="detail-task-checkbox w-3.5 h-3.5 text-indigo-600 rounded">
+                    <span class="truncate">${task}</span>
+                `;
+                taskContainer.appendChild(label);
+            });
+
+            if (record) {
+                document.getElementById('detailWorkType').value = record.workType;
+                document.getElementById('detailExpense').value = record.expense;
+                document.getElementById('detailIncome').value = record.income || '';
+                document.getElementById('detailMemo').value = record.memo || '';
+                document.getElementById('detailTransitNote').textContent = record.transitIncluded ? `(うち自動交通費: ¥${record.transitIncluded.toLocaleString()})` : '';
+                document.getElementById('detailDeleteBtn').classList.remove('hidden');
+
+                currentEditingPhotoBase64 = record.photo || '';
+            } else {
+                document.getElementById('detailWorkType').value = '出社';
+                const transitFee = Number(localStorage.getItem('lifelog_transit_fee')) || 0;
+                document.getElementById('detailExpense').value = transitFee > 0 ? transitFee : '';
+                document.getElementById('detailIncome').value = '';
+                document.getElementById('detailMemo').value = '';
+                document.getElementById('detailTransitNote').textContent = transitFee > 0 ? `※新規作成時は交通費 ¥${transitFee.toLocaleString()} を初期セット` : '';
+                document.getElementById('detailDeleteBtn').classList.add('hidden');
+
+                currentEditingPhotoBase64 = '';
+            }
+
+            updateDetailPhotoPreview();
+            document.getElementById('dayDetailModal').classList.remove('hidden');
+        }
+
+        function closeDayDetailModal() {
+            document.getElementById('dayDetailModal').classList.add('hidden');
+            document.getElementById('detailPhotoInput').value = '';
+        }
+
+        function updateDetailPhotoPreview() {
+            const imgEl = document.getElementById('detailPhotoPreview');
+            const placeholderEl = document.getElementById('detailPhotoPlaceholder');
+            const removeBtn = document.getElementById('removePhotoBtn');
+
+            if (currentEditingPhotoBase64) {
+                imgEl.src = currentEditingPhotoBase64;
+                imgEl.classList.remove('hidden');
+                placeholderEl.classList.add('hidden');
+                removeBtn.classList.remove('hidden');
+            } else {
+                imgEl.src = '';
+                imgEl.classList.add('hidden');
+                placeholderEl.classList.remove('hidden');
+                removeBtn.classList.add('hidden');
+            }
+        }
+
+        // 画像を軽量リサイズしてBase64化する関数（LocalStorageの容量節約のため）
+        function handlePhotoUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 600; // 横幅最大600pxにリサイズ
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > MAX_WIDTH) {
+                        height = Math.round((height * MAX_WIDTH) / width);
+                        width = MAX_WIDTH;
+                    }
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // JPEG品質0.7で軽量化
+                    currentEditingPhotoBase64 = canvas.toDataURL('image/jpeg', 0.7);
+                    updateDetailPhotoPreview();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function removeDetailPhoto() {
+            currentEditingPhotoBase64 = '';
+            document.getElementById('detailPhotoInput').value = '';
+            updateDetailPhotoPreview();
+        }
+
+        function saveFromDetailModal() {
+            const workType = document.getElementById('detailWorkType').value;
+            const expense = Number(document.getElementById('detailExpense').value) || 0;
+            const income = Number(document.getElementById('detailIncome').value) || 0;
+            const memo = document.getElementById('detailMemo').value.trim();
+
+            const checkedBoxes = document.querySelectorAll('.detail-task-checkbox:checked');
+            const completedTasks = Array.from(checkedBoxes).map(cb => cb.value);
+
+            let records = JSON.parse(localStorage.getItem('lifelog_records')) || [];
+            const existingIndex = records.findIndex(r => r.date === currentEditingDate);
+
+            const updatedRecord = {
+                id: existingIndex !== -1 ? records[existingIndex].id : Date.now(),
+                date: currentEditingDate,
+                workType: workType,
+                tasks: completedTasks,
+                expense: expense,
+                transitIncluded: existingIndex !== -1 ? (records[existingIndex].transitIncluded || 0) : 0,
+                income: income,
+                memo: memo,
+                photo: currentEditingPhotoBase64
+            };
+
+            if (existingIndex !== -1) {
+                records[existingIndex] = updatedRecord;
+            } else {
+                records.push(updatedRecord);
+            }
+
+            records.sort((a, b) => b.date.localeCompare(a.date));
+            try {
+                localStorage.setItem('lifelog_records', JSON.stringify(records));
+            } catch (err) {
+                alert('保存容量の上限に達しました。古い写真を削除してください。');
+                return;
+            }
+
+            closeDayDetailModal();
+            refreshAll();
+        }
+
+        function deleteFromDetailModal() {
+            if (!confirm(`${currentEditingDate} の記録を完全に削除しますか？`)) return;
+            let records = JSON.parse(localStorage.getItem('lifelog_records')) || [];
+            records = records.filter(r => r.date !== currentEditingDate);
+            localStorage.setItem('lifelog_records', JSON.stringify(records));
+            closeDayDetailModal();
+            refreshAll();
+        }
+
+        // --- 📈 2. ミニ折れ線グラフ ＆ 拡大・年間グラフモーダル ---
+        function renderChart() {
+            const targetMonth = document.getElementById('targetMonth').value;
+            if (!targetMonth) return;
+
+            const [year, month] = targetMonth.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
+
+            const allRecords = JSON.parse(localStorage.getItem('lifelog_records')) || [];
+            const monthRecordsMap = {};
+            allRecords.filter(r => r.date.startsWith(targetMonth)).forEach(r => {
+                monthRecordsMap[r.date] = r.expense;
+            });
+
+            const labels = [];
+            const dataPoints = [];
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateStr = `${targetMonth}-${String(day).padStart(2, '0')}`;
+                labels.push(`${day}日`);
+                dataPoints.push(monthRecordsMap[dateStr] !== undefined ? monthRecordsMap[dateStr] : null);
+            }
+
+            const ctx = document.getElementById('expenseChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '日別支出 (円)',
+                        data: dataPoints,
+                        borderColor: '#4f46e5',
+                        backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        pointBackgroundColor: '#4f46e5',
+                        tension: 0.2,
+                        spanGaps: true,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: (ctx) => `支出: ¥${ctx.parsed.y.toLocaleString()}` } }
+                    },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 15 } },
+                        y: { beginAtZero: true, ticks: { font: { size: 10 }, callback: (v) => `¥${v.toLocaleString()}` } }
+                    }
+                }
+            });
+        }
+
+        function openChartModal() {
+            const targetMonth = document.getElementById('targetMonth').value;
+            currentChartYear = Number(targetMonth.split('-')[0]);
+            document.getElementById('chartModal').classList.remove('hidden');
+            switchChartMode('daily');
+        }
+
+        function closeChartModal() {
+            document.getElementById('chartModal').classList.add('hidden');
+        }
+
+        function switchChartMode(mode) {
+            currentChartMode = mode;
+            const tabDaily = document.getElementById('tabDailyChart');
+            const tabYearly = document.getElementById('tabYearlyChart');
+            const yearSelector = document.getElementById('yearlyYearSelector');
+            const yearlySummary = document.getElementById('yearlySummaryBar');
+
+            if (mode === 'daily') {
+                tabDaily.className = 'px-3 py-1 rounded-md bg-white text-indigo-600 shadow-2xs transition';
+                tabYearly.className = 'px-3 py-1 rounded-md text-slate-600 hover:text-slate-800 transition';
+                yearSelector.classList.add('hidden');
+                yearlySummary.classList.add('hidden');
+            } else {
+                tabYearly.className = 'px-3 py-1 rounded-md bg-white text-indigo-600 shadow-2xs transition';
+                tabDaily.className = 'px-3 py-1 rounded-md text-slate-600 hover:text-slate-800 transition';
+                yearSelector.classList.remove('hidden');
+                yearlySummary.classList.remove('hidden');
+            }
+            renderExpandedChart();
+        }
+
+        function changeChartYear(offset) {
+            currentChartYear += offset;
+            renderExpandedChart();
+        }
+
+        function renderExpandedChart() {
+            const ctx = document.getElementById('expandedChartCanvas').getContext('2d');
+            if (expandedChartInstance) expandedChartInstance.destroy();
+
+            const allRecords = JSON.parse(localStorage.getItem('lifelog_records')) || [];
+
+            if (currentChartMode === 'daily') {
+                // --- 月間の日別グラフ（拡大版） ---
+                const targetMonth = document.getElementById('targetMonth').value;
+                const [year, month] = targetMonth.split('-').map(Number);
+                const daysInMonth = new Date(year, month, 0).getDate();
+
+                const monthMap = {};
+                allRecords.filter(r => r.date.startsWith(targetMonth)).forEach(r => {
+                    monthMap[r.date] = r;
+                });
+
+                const labels = [];
+                const expData = [];
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = `${targetMonth}-${String(d).padStart(2, '0')}`;
+                    labels.push(`${month}/${d}`);
+                    expData.push(monthMap[dateStr] ? monthMap[dateStr].expense : null);
+                }
+
+                expandedChartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: `${year}年${month}月 日別支出 (円)`,
+                            data: expData,
+                            borderColor: '#4f46e5',
+                            backgroundColor: 'rgba(79, 70, 229, 0.12)',
+                            borderWidth: 3,
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
+                            tension: 0.2,
+                            spanGaps: true,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: (context) => `支出: ¥${context.parsed.y.toLocaleString()}`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: { beginAtZero: true, ticks: { callback: (v) => `¥${v.toLocaleString()}` } }
+                        }
+                    }
+                });
+
+            } else {
+                // --- 1年通しての月別推移グラフ（1月〜12月） ---
+                document.getElementById('chartYearDisplay').textContent = `${currentChartYear}年`;
+
+                const labels = [];
+                const monthlyExp = [];
+                const monthlyInc = [];
+                let yearTotalExp = 0;
+                let yearTotalInc = 0;
+
+                for (let m = 1; m <= 12; m++) {
+                    const mStr = `${currentChartYear}-${String(m).padStart(2, '0')}`;
+                    labels.push(`${m}月`);
+
+                    const mRecords = allRecords.filter(r => r.date.startsWith(mStr));
+                    const expSum = mRecords.reduce((s, r) => s + (r.expense || 0), 0);
+                    const incSum = mRecords.reduce((s, r) => s + (r.income || 0), 0);
+
+                    monthlyExp.push(expSum);
+                    monthlyInc.push(incSum);
+                    yearTotalExp += expSum;
+                    yearTotalInc += incSum;
+                }
+
+                // 年間サマリー更新
+                const yearBalance = yearTotalInc - yearTotalExp;
+                document.getElementById('yearlyTotalExpense').textContent = `¥${yearTotalExp.toLocaleString()}`;
+                document.getElementById('yearlyTotalIncome').textContent = `+¥${yearTotalInc.toLocaleString()}`;
+                const balEl = document.getElementById('yearlyTotalBalance');
+                balEl.textContent = `${yearBalance >= 0 ? '+' : ''}¥${yearBalance.toLocaleString()}`;
+                balEl.className = `text-base font-bold ${yearBalance >= 0 ? 'text-indigo-700' : 'text-rose-600'}`;
+
+                expandedChartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: '月間支出 (円)',
+                                data: monthlyExp,
+                                borderColor: '#4f46e5',
+                                backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                                borderWidth: 3,
+                                pointRadius: 5,
+                                tension: 0.2,
+                                fill: true
+                            },
+                            {
+                                label: '月間収入 (円)',
+                                data: monthlyInc,
+                                borderColor: '#10b981',
+                                backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                                borderWidth: 2,
+                                borderDash: [5, 5],
+                                pointRadius: 4,
+                                tension: 0.2,
+                                fill: false
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: (context) => `${context.dataset.label}: ¥${context.parsed.y.toLocaleString()}`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: { beginAtZero: true, ticks: { callback: (v) => `¥${v.toLocaleString()}` } }
+                        }
+                    }
+                });
+            }
+        }
+
+        // --- 📊 勤務形態別集計 ---
+        function toggleAnalyticsDetail() {
+            isAnalyticsExpanded = !isAnalyticsExpanded;
+            document.getElementById('toggleDetailBtn').textContent = isAnalyticsExpanded ? '▲ 平均・前月比を閉じる' : '▼ 平均・前月比を開く';
+            renderAnalytics();
+        }
+
+        function getPrevMonthStr(monthStr) {
+            const [year, month] = monthStr.split('-').map(Number);
+            const prevDate = new Date(year, month - 2, 1);
+            return `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        function calcTotal(records) {
+            return records.reduce((sum, r) => sum + (r.expense || 0), 0);
+        }
+
+        function calcAverage(records) {
+            if (records.length === 0) return null;
+            return Math.round(calcTotal(records) / records.length);
+        }
+
+        function formatDiff(currentAvg, prevAvg) {
+            if (currentAvg === null || prevAvg === null) return '<span class="text-slate-400">前月比 -</span>';
+            const diff = currentAvg - prevAvg;
+            if (diff === 0) return '<span class="text-slate-500">前月比 ±¥0</span>';
+            if (diff < 0) return `<span class="text-emerald-600">前月比 -¥${Math.abs(diff).toLocaleString()}</span>`;
+            return `<span class="text-rose-500">前月比 +¥${diff.toLocaleString()}</span>`;
+        }
+
+        function renderAnalytics() {
+            const targetMonth = document.getElementById('targetMonth').value;
+            if (!targetMonth) return;
+
+            const prevMonth = getPrevMonthStr(targetMonth);
+            const allRecords = JSON.parse(localStorage.getItem('lifelog_records')) || [];
+
+            const currentRecords = allRecords.filter(r => r.date.startsWith(targetMonth));
+            const prevRecords = allRecords.filter(r => r.date.startsWith(prevMonth));
+
+            const totalExp = calcTotal(currentRecords);
+            const totalInc = currentRecords.reduce((sum, r) => sum + (r.income || 0), 0);
+            const balance = totalInc - totalExp;
+
+            document.getElementById('monthlyTotalExpense').textContent = `¥${totalExp.toLocaleString()}`;
+            document.getElementById('monthlyTotalIncome').textContent = `+¥${totalInc.toLocaleString()}`;
+            const balanceEl = document.getElementById('monthlyBalance');
+            balanceEl.textContent = `${balance >= 0 ? '+' : ''}¥${balance.toLocaleString()}`;
+            balanceEl.className = `text-sm font-bold ${balance >= 0 ? 'text-indigo-600' : 'text-rose-500'}`;
+
+            const container = document.getElementById('workTypeAnalytics');
+            container.innerHTML = '';
+
+            workTypes.forEach(type => {
+                const currTypeRecords = currentRecords.filter(r => r.workType === type);
+                const prevTypeRecords = prevRecords.filter(r => r.workType === type);
+
+                const currTotal = calcTotal(currTypeRecords);
+                const currAvg = calcAverage(currTypeRecords);
+                const prevAvg = calcAverage(prevTypeRecords);
+
+                const detailHtml = isAnalyticsExpanded
+                    ? `<div class="mt-2 pt-2 border-t border-slate-200/80 flex justify-between items-center text-[11px]">
+                           <span class="text-slate-500">平均: <strong class="text-slate-700">${currAvg !== null ? `¥${currAvg.toLocaleString()}` : '-'}</strong></span>
+                           <span class="font-medium">${formatDiff(currAvg, prevAvg)}</span>
+                       </div>`
+                    : '';
+
+                const card = document.createElement('div');
+                card.className = 'p-2.5 bg-slate-50 hover:bg-slate-100/80 transition rounded-lg border border-slate-200/80';
+                card.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <span class="text-xs font-bold text-slate-700">${type}</span>
+                            <span class="text-[10px] text-slate-400 ml-1">(${currTypeRecords.length}日)</span>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-[10px] text-slate-400 block leading-none">総額</span>
+                            <span class="text-sm font-bold text-slate-800">¥${currTotal.toLocaleString()}</span>
+                        </div>
+                    </div>
+                    ${detailHtml}
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // --- 📝 3. 記録履歴モーダル ---
+        function openHistoryModal() {
+            renderModalRecords();
+            document.getElementById('historyModal').classList.remove('hidden');
+        }
+
+        function closeHistoryModal() {
+            document.getElementById('historyModal').classList.add('hidden');
+        }
+
+        function renderModalRecords() {
+            const targetMonth = document.getElementById('targetMonth').value;
+            document.getElementById('historyModalTitle').textContent = `📝 ${targetMonth.replace('-', '年')}月の記録履歴`;
+
+            const listEl = document.getElementById('modalRecordList');
+            let records = JSON.parse(localStorage.getItem('lifelog_records')) || [];
+            records = records.filter(r => r.date.startsWith(targetMonth));
+
+            if (records.length === 0) {
+                listEl.innerHTML = '<p class="text-slate-400 text-center py-8">この月の記録はありません</p>';
+                return;
+            }
+
+            listEl.innerHTML = '';
+            records.forEach((record) => {
+                const tasksHtml = (record.tasks && record.tasks.length > 0)
+                    ? `<div class="mt-1 flex flex-wrap gap-1">${record.tasks.map(t => `<span class="bg-indigo-50 text-indigo-600 text-[10px] px-1.5 py-0.5 rounded">${t}</span>`).join('')}</div>`
+                    : '';
+
+                const memoHtml = record.memo
+                    ? `<div class="mt-1 text-[11px] text-slate-600 bg-white px-2 py-1 rounded border border-slate-100">🍳 ${record.memo}</div>`
+                    : '';
+
+                const photoThumb = record.photo
+                    ? `<img src="${record.photo}" class="w-10 h-10 object-cover rounded border border-slate-200 shrink-0">`
+                    : '';
+
+                const incomeNote = (record.income && record.income > 0)
+                    ? `<span class="text-xs font-bold text-emerald-600 mr-2">+¥${record.income.toLocaleString()}</span>`
+                    : '';
+
+                const item = document.createElement('div');
+                item.className = 'p-2.5 bg-slate-50 rounded-lg border border-slate-200/80 flex gap-2.5 items-start';
+                item.innerHTML = `
+                    ${photoThumb}
+                    <div class="flex-1 min-w-0">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <span class="font-bold text-slate-700">${record.date}</span>
+                                <span class="text-[10px] px-1.5 py-0.5 rounded ml-1.5 ${workTypeBadgeColors[record.workType] || 'bg-slate-200'}">${record.workType}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                ${incomeNote}
+                                <span class="font-bold text-slate-800">支出 ¥${record.expense.toLocaleString()}</span>
+                                <button onclick="deleteRecord(${record.id})" class="text-slate-400 hover:text-rose-500 font-bold px-1.5" title="削除">×</button>
+                            </div>
+                        </div>
+                        ${memoHtml}
+                        ${tasksHtml}
+                    </div>
+                `;
+                listEl.appendChild(item);
+            });
+        }
+    </script>
+
+</body>
+</html>
